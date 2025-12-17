@@ -27,7 +27,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--visium_path", type=Path, required=True, help="Path to Space Ranger outs/ directory")
     parser.add_argument("--out_h5ad", type=Path, default=None, help="Output .h5ad path")
     parser.add_argument("--config", type=Path, default=REPO_ROOT / "configs" / "default.yaml")
-    parser.add_argument("--min_pct", type=float, default=None, help="Minimum percent of spots for gene retention")
+    parser.add_argument(
+        "--filter_in_tissue",
+        type=int,
+        default=1,
+        help="Whether to filter to in_tissue==1 (1=yes, 0=no) if metadata exists",
+    )
+    parser.add_argument(
+        "--min_spots_frac",
+        type=float,
+        default=None,
+        help="Minimum fraction of spots expressing a gene (defaults to config min_pct)",
+    )
     parser.add_argument("--n_hvg", type=int, default=None, help="Number of highly variable genes to keep")
     parser.add_argument("--count_file", type=str, default="filtered_feature_bc_matrix.h5")
     parser.add_argument("--source_image_path", type=Path, default=None)
@@ -37,12 +48,17 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     cfg = load_yaml(args.config)
-    min_pct = args.min_pct if args.min_pct is not None else cfg["preprocessing"]["min_pct"]
+    min_pct = (
+        args.min_spots_frac
+        if args.min_spots_frac is not None
+        else cfg["preprocessing"]["min_pct"]
+    )
     n_hvg = args.n_hvg if args.n_hvg is not None else cfg["preprocessing"]["n_hvg"]
     flavor = cfg["preprocessing"].get("flavor", "seurat_v3")
 
     adata = load_visium(args.visium_path, count_file=args.count_file, source_image_path=args.source_image_path)
-    adata = filter_spots(adata)
+    if args.filter_in_tissue:
+        adata = filter_spots(adata)
     adata = filter_genes_by_pct(adata, min_pct=min_pct)
     adata = normalize_log1p(adata)
     adata = select_hvgs(adata, n_top_genes=n_hvg, flavor=flavor, subset=True)
