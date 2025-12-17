@@ -13,6 +13,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
+import numpy as np
+from sklearn.neighbors import NearestNeighbors
+
 from spatial_interactions.graph.build_graph import build_spatial_graph, save_graph  # noqa: E402
 from spatial_interactions.utils.io import ensure_dir, load_yaml  # noqa: E402
 from spatial_interactions.utils.logging import get_logger  # noqa: E402
@@ -20,21 +23,27 @@ from spatial_interactions.utils.logging import get_logger  # noqa: E402
 logger = get_logger(__name__)
 
 
-def _coords_to_microns(adata: "sc.AnnData", coords: np.ndarray, spot_diameter_um: float = 55.0) -> np.ndarray:
+def _coords_to_microns(
+    adata: "sc.AnnData", coords: np.ndarray, spot_diameter_um: float = 55.0
+) -> tuple[np.ndarray, bool]:
     """Convert coordinates to microns using scalefactors if available; fallback to pixels."""
     try:
         spatial_key = next(iter(adata.uns["spatial"].keys()))
     except Exception:
         logger.warning("No spatial scalefactors found; using pixel coordinates.")
-        return coords
+        return coords, False
     scalefactors = adata.uns["spatial"][spatial_key].get("scalefactors", {})
     spot_diam_px = scalefactors.get("spot_diameter_fullres")
     if spot_diam_px is None or spot_diam_px == 0:
         logger.warning("spot_diameter_fullres missing; using pixel coordinates.")
-        return coords
+        return coords, False
     um_per_px = spot_diameter_um / spot_diam_px
-    logger.info("Converting coordinates to microns with %.3f um/px (spot_diameter_fullres=%.3f px)", um_per_px, spot_diam_px)
-    return coords * um_per_px
+    logger.info(
+        "Converting coordinates to microns with %.3f um/px (spot_diameter_fullres=%.3f px)",
+        um_per_px,
+        spot_diam_px,
+    )
+    return coords * um_per_px, True
 
 
 def parse_args() -> argparse.Namespace:
@@ -42,10 +51,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--h5ad", type=Path, required=True, help="Processed .h5ad file")
     parser.add_argument("--out_graph", type=Path, default=None, help="Output graph .pt path")
     parser.add_argument("--config", type=Path, default=REPO_ROOT / "configs" / "default.yaml")
-    parser.add_argument("--graph_type", choices=["knn", "radius"], default="knn", help="Graph construction mode")
+    parser.add_argument("--graph_type", choices=["knn", "radius"], default="radius", help="Graph construction mode")
     parser.add_argument("--k", type=int, default=None, help="Number of neighbors for kNN graph")
-    parser.add_argument("--radius", type=float, default=None, help="Radius for radius graph (units depend on distance_unit)")
-    parser.add_argument("--distance_unit", choices=["pixel", "um"], default="pixel", help="Units for radius graph")
+    parser.add_argument(
+        "--radius",
+        type=str,
+        default="auto",
+        help="Radius for radius graph (units depend on distance_unit). Use 'auto' for heuristic.",
+    )
+    parser.add_argument(
+        "--distance_unit",
+        choices=["auto", "pixel", "um"],
+        default="auto",
+        help="Units for radius graph. 'auto' tries microns then falls back to pixels.",
+    )
     parser.add_argument("--spot_diameter_um", type=float, default=55.0, help="Assumed spot diameter in microns for px->um conversion (if needed)")
     parser.add_argument("--rbf_dim", type=int, default=None, help="RBF embedding dimension")
     return parser.parse_args()
@@ -61,23 +80,45 @@ def main() -> None:
     adata = sc.read_h5ad(args.h5ad)
 
     coords = np.array(adata.obsm["spatial"])
-    if args.graph_type == "radius" and args.distance_unit == "um":
-        coords_um = _coords_to_microns(adata, coords, spot_diameter_um=args.spot_diameter_um)
-        coords = coords_um
+    conversion_used = False
+    if args.graph_type == "radius":
+        if args.distance_unit in {"auto", "um"}:
+            coords_um, success = _coords_to_microns(
+                adata, coords, spot_diameter_um=args.spot_diameter_um
+            )
+            if success:
+                coords = coords_um
+                conversion_used = True
+                logger.info("Using microns for radius graph.")
+            elif args.distance_unit == "um":
+                logger.warning("Micron conversion unavailable; falling back to pixel coordinates.")
+        # else keep pixel coords
 
-    radius = args.radius
-    if args.graph_type == "radius" and radius is None:
-        # heuristic: median NN distance * 1.5
-        nbrs = NearestNeighbors(n_neighbors=4).fit(coords)
-        dists, _ = nbrs.kneighbors(coords)
-        median_nn = np.median(dists[:, 1])
-        radius = float(median_nn * 1.5)
-        logger.info("Auto radius set to %.3f based on median NN distance", radius)
+    radius_val: Optional[float] = None
+    if args.graph_type == "radius":
+        if args.radius == "auto":
+            nbrs = NearestNeighbors(n_neighbors=4).fit(coords)
+            dists, _ = nbrs.kneighbors(coords)
+            median_nn = float(np.median(dists[:, 1]))
+            base = 1.5 * median_nn
+            min_r = 0.9 * median_nn
+            max_r = 3.0 * median_nn
+            radius_val = float(np.clip(base, min_r, max_r))
+            logger.info(
+                "Auto radius (median NN=%.3f) -> %.3f (clamped to [%.3f, %.3f]) in %s",
+                median_nn,
+                radius_val,
+                min_r,
+                max_r,
+                "microns" if conversion_used else "pixels",
+            )
+        else:
+            radius_val = float(args.radius)
 
     artifacts = build_spatial_graph(
         adata,
         k=k,
-        radius=radius if args.graph_type == "radius" else None,
+        radius=radius_val if args.graph_type == "radius" else None,
         rbf_dim=rbf_dim,
         coords_override=coords,
     )

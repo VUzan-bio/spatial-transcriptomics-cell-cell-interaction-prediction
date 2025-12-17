@@ -1,6 +1,6 @@
 # Spatial Cell Interactions
 
-Distance-aware Graph Attention Networks (GATv2) for predicting cell-cell interactions from 10x Genomics Visium data. The pipeline ingests Space Ranger `outs/`, builds a spatial neighbor graph with distance encodings, trains a self-supervised edge reconstruction model, and exports ranked edges, ligand-receptor summaries, and publication-ready figures.
+Distance-aware Graph Attention Networks (GATv2) for predicting cell-cell interactions from 10x Genomics Visium data. The pipeline ingests Space Ranger `outs/`, builds a spatial neighbor graph with distance encodings, trains a self-supervised edge reconstruction model, and exports ranked edges, ligand-receptor summaries.
 
 ## Method overview
 - Load Visium expression + spatial metadata via `scanpy.read_visium`.
@@ -62,6 +62,7 @@ Example figures (generated after running):
 - **Objective:** Self-supervised edge reconstruction using observed spatial edges as positives and uniform negative sampling over non-edges. Loss is BCE on concatenated `[z_i, z_j, edge_attr_ij]` through an MLP head. Early stopping monitors validation average precision.
 - **Graph construction:** kNN (default k=8) or radius-based edges on spot coordinates, with Gaussian RBF distance embeddings (default 16 channels).
 - **Biology add-on:** Optional ligand-receptor ranking when `data/lr_db/lr_pairs.csv` (columns: `ligand,receptor`) is provided; reports pairs enriched among top predicted edges.
+- **Troubleshooting: misaligned spots & histology:** 10x defines `pxl_row_in_fullres` as y and `pxl_col_in_fullres` as x. If spots and tissue image do not overlap, run `python scripts/06_fix_spatial_alignment.py --outs_path data/external/<sample>/outs` to rebuild `tissue_positions_list.csv` from parquet/csv and apply swaps/scales; `crop_coord` in `sc.pl.spatial` is in pixel space. Then regenerate figures via `scripts/07_make_pretty_spatial_figures.py`.
 
 ## Reproducibility
 - Deterministic seeding across Python, NumPy, and PyTorch (`seed` in configs).
@@ -83,3 +84,4 @@ If you use this repository, please cite:
   note         = {https://github.com/your-org/spatial-cell-interactions}
 }
 ```
+- Graph defaults use a radius graph. When scalefactors allow, coordinates are converted to microns using spot_diameter_fullres (approximate per 10x guidance); otherwise pixel units are used with an auto radius heuristic (1.5× median nearest-neighbor distance, clamped).

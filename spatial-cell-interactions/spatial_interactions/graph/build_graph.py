@@ -111,7 +111,7 @@ def build_spatial_graph(
 
     x = adata.X
     if not isinstance(x, np.ndarray):
-        x = x.A  # convert sparse to dense
+        x = x.toarray()
 
     data = Data(
         x=torch.tensor(x, dtype=torch.float32),
