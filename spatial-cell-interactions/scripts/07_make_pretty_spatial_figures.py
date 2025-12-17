@@ -30,6 +30,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--padding", type=float, default=200.0, help="Padding in pixels for cropping")
     p.add_argument("--img_key", type=str, default=None, help="Image key to use (hires or lowres). Defaults to hires if available.")
     p.add_argument("--top_edges", type=int, default=2000, help="Number of edges to overlay if graph provided")
+    p.add_argument(
+        "--crop_mode",
+        choices=["auto", "spots", "image"],
+        default="auto",
+        help="auto: let scanpy crop; spots: crop to spots (in_tissue); image: crop to tissue region in image via intensity mask",
+    )
     return p.parse_args()
 
 
@@ -38,6 +44,25 @@ def _crop_from_coords(coords: np.ndarray, padding: float) -> tuple[float, float,
     right = float(np.max(coords[:, 0]) + padding)
     top = float(np.min(coords[:, 1]) - padding)
     bottom = float(np.max(coords[:, 1]) + padding)
+    return left, right, top, bottom
+
+
+def _crop_from_image(image: np.ndarray, padding: float) -> tuple[float, float, float, float] | None:
+    """Compute crop from tissue image by thresholding background."""
+    img = image.astype(float)
+    if img.ndim == 3:
+        gray = img.mean(axis=2)
+    else:
+        gray = img
+    thresh = gray.max() * 0.98
+    mask = gray < thresh
+    if mask.sum() == 0:
+        return None
+    ys, xs = np.where(mask)
+    left = float(xs.min() - padding)
+    right = float(xs.max() + padding)
+    top = float(ys.min() - padding)
+    bottom = float(ys.max() + padding)
     return left, right, top, bottom
 
 
@@ -73,7 +98,15 @@ def main() -> None:
 
     coords = adata.obsm["spatial"]
     mask = adata.obs["in_tissue"] == 1 if "in_tissue" in adata.obs else np.ones(adata.n_obs, dtype=bool)
-    crop = _crop_from_coords(coords[mask], args.padding)
+    crop = None
+    if args.crop_mode == "spots":
+        crop = _crop_from_coords(coords[mask], args.padding)
+    elif args.crop_mode == "image":
+        img = adata.uns["spatial"][lib]["images"][img_key]
+        crop = _crop_from_image(img, args.padding)
+        if crop is None:
+            logger.warning("Image-based crop failed; falling back to spot-based crop.")
+            crop = _crop_from_coords(coords[mask], args.padding)
     spot_size = _spot_size_from_scalefactors(adata, img_key)
 
     # Plot in_tissue categorical
@@ -88,7 +121,6 @@ def main() -> None:
         crop_coord=crop,
         spot_size=spot_size,
         show=False,
-        legend_loc="none",
     )
     plt.axis("off")
     plt.tight_layout()
