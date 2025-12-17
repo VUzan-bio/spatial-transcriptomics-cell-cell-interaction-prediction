@@ -15,6 +15,7 @@ def select_hvgs(
     n_top_genes: int = 2000,
     flavor: str = "seurat_v3",
     subset: bool = True,
+    layer: str | None = None,
 ) -> "sc.AnnData":
     """Compute and optionally subset to highly variable genes."""
     tried_flavors = []
@@ -23,7 +24,9 @@ def select_hvgs(
         if flv in tried_flavors:
             continue
         try:
-            sc.pp.highly_variable_genes(adata, n_top_genes=n_top_genes, flavor=flv, subset=False)
+            sc.pp.highly_variable_genes(
+                adata, n_top_genes=n_top_genes, flavor=flv, subset=False, layer=layer
+            )
             used_flavor = flv
             break
         except ImportError:

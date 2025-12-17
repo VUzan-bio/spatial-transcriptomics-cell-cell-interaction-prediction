@@ -60,8 +60,10 @@ def main() -> None:
     if args.filter_in_tissue:
         adata = filter_spots(adata)
     adata = filter_genes_by_pct(adata, min_pct=min_pct)
+    # HVGs on raw counts (seurat_v3 expects counts)
+    adata = select_hvgs(adata, n_top_genes=n_hvg, flavor=flavor, subset=True, layer="counts")
+    # Normalize after selecting/subsetting HVGs
     adata = normalize_log1p(adata)
-    adata = select_hvgs(adata, n_top_genes=n_hvg, flavor=flavor, subset=True)
 
     if args.out_h5ad is None:
         sample = args.visium_path.resolve().parent.name

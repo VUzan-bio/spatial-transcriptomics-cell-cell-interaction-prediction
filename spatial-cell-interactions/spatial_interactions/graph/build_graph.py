@@ -89,13 +89,14 @@ def build_spatial_graph(
     rbf_dim: int = 16,
     rbf_min: Optional[float] = None,
     rbf_max: Optional[float] = None,
+    coords_override: Optional[np.ndarray] = None,
 ) -> GraphArtifacts:
     """
     Construct PyG Data object with spatial edges and distance encodings.
     """
     if "spatial" not in adata.obsm:
         raise ValueError("AnnData is missing obsm['spatial'] coordinates.")
-    coords = np.array(adata.obsm["spatial"])
+    coords = np.array(coords_override) if coords_override is not None else np.array(adata.obsm["spatial"])
     if coords.ndim != 2 or coords.shape[1] < 2:
         raise ValueError("Spatial coordinates must have shape (n_spots, 2).")
 
