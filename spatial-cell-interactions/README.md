@@ -12,7 +12,9 @@ Distance-aware Graph Attention Networks (GATv2) for predicting cell-cell interac
 ## Data
 Assumes a standard Space Ranger `outs/` directory containing:
 - `filtered_feature_bc_matrix.h5`
-- `spatial/` with tissue positions (`tissue_positions_list.csv`), `scalefactors_json.json`, and associated images
+- `spatial/` with tissue positions (`tissue_positions.parquet` or `tissue_positions.csv`), `scalefactors_json.json`, and associated images
+
+`tissue_positions_list.csv` is regenerated verbatim from the native parquet/CSV if present; avoid hand-edited conversions that rescale or swap axes.
 
 Loading relies on `scanpy.read_visium(path=..., count_file="filtered_feature_bc_matrix.h5", load_images=True)`. If files are missing, the CLI will raise a descriptive error.
 
@@ -62,7 +64,7 @@ Example figures (generated after running):
 - **Objective:** Self-supervised edge reconstruction using observed spatial edges as positives and uniform negative sampling over non-edges. Loss is BCE on concatenated `[z_i, z_j, edge_attr_ij]` through an MLP head. Early stopping monitors validation average precision.
 - **Graph construction:** kNN (default k=8) or radius-based edges on spot coordinates, with Gaussian RBF distance embeddings (default 16 channels).
 - **Biology add-on:** Optional ligand-receptor ranking when `data/lr_db/lr_pairs.csv` (columns: `ligand,receptor`) is provided; reports pairs enriched among top predicted edges.
-- **Troubleshooting: misaligned spots & histology:** 10x defines `pxl_row_in_fullres` as y and `pxl_col_in_fullres` as x. If spots and tissue image do not overlap, run `python scripts/06_fix_spatial_alignment.py --outs_path data/external/<sample>/outs` to rebuild `tissue_positions_list.csv` from parquet/csv and apply swaps/scales; `crop_coord` in `sc.pl.spatial` is in pixel space. Then regenerate figures via `scripts/07_make_pretty_spatial_figures.py`.
+- **Troubleshooting: misaligned spots & histology:** 10x defines `pxl_row_in_fullres` as y and `pxl_col_in_fullres` as x. If spots and tissue image do not overlap, regenerate `tissue_positions_list.csv` directly from the native parquet/CSV (no scaling, no offsets) or run `python scripts/06_fix_spatial_alignment.py --outs_path data/external/<sample>/outs`. `crop_coord` in `sc.pl.spatial` is in pixel space. Then regenerate figures via `scripts/07_make_pretty_spatial_figures.py`.
 
 ## Reproducibility
 - Deterministic seeding across Python, NumPy, and PyTorch (`seed` in configs).

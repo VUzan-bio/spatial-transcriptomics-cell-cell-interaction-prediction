@@ -22,33 +22,47 @@ def _ensure_tissue_positions(spatial_dir: Path) -> None:
     list_csv = spatial_dir / "tissue_positions_list.csv"
     fallback_csv = spatial_dir / "tissue_positions.csv"
     parquet = spatial_dir / "tissue_positions.parquet"
+    expected_cols = [
+        "barcode",
+        "in_tissue",
+        "array_row",
+        "array_col",
+        "pxl_row_in_fullres",
+        "pxl_col_in_fullres",
+    ]
 
-    if list_csv.exists():
+    def _normalize(df: DataFrame) -> DataFrame:
+        """Return dataframe with required columns in order, no scaling applied."""
+        if df.shape[1] == 6 and not set(expected_cols).issubset(df.columns):
+            df = df.copy()
+            df.columns = expected_cols
+        if not set(expected_cols).issubset(df.columns):
+            raise ValueError(
+                f"Tissue positions missing required columns. Found {df.columns}, expected {expected_cols}"
+            )
+        return df[expected_cols]
+
+    if parquet.exists():
+        logger.info("Syncing tissue_positions_list.csv from tissue_positions.parquet (verbatim columns)")
+        df = _normalize(pd.read_parquet(parquet))
+        df.to_csv(list_csv, index=False, header=False)
         return
 
     if fallback_csv.exists():
-        logger.info("Creating tissue_positions_list.csv from tissue_positions.csv")
-        df = pd.read_csv(fallback_csv, header=None)
+        logger.info("Syncing tissue_positions_list.csv from tissue_positions.csv (verbatim columns)")
+        try:
+            df = _normalize(pd.read_csv(fallback_csv))
+        except ValueError:
+            # Handle header-less CSV
+            df = _normalize(pd.read_csv(fallback_csv, header=None))
         df.to_csv(list_csv, index=False, header=False)
         return
 
-    if parquet.exists():
-        logger.info("Creating tissue_positions_list.csv from tissue_positions.parquet")
-        df = pd.read_parquet(parquet)
-        expected_cols = [
-            "barcode",
-            "in_tissue",
-            "array_row",
-            "array_col",
-            "pxl_row_in_fullres",
-            "pxl_col_in_fullres",
-        ]
-        if not set(expected_cols).issubset(df.columns):
-            raise ValueError(
-                f"Parquet tissue positions missing required columns. Found {df.columns}, expected {expected_cols}"
-            )
-        df = df[expected_cols]
-        df.to_csv(list_csv, index=False, header=False)
+    if list_csv.exists():
+        logger.warning(
+            "Using existing tissue_positions_list.csv because parquet/csv sources are missing; "
+            "ensure this file was not manually transformed."
+        )
         return
 
     raise FileNotFoundError(

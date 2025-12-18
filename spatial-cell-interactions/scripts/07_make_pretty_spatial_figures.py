@@ -31,8 +31,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--img_key",
         type=str,
-        default=None,
-        help="Image key to use (hires, lowres, or none). Defaults to hires if available.",
+        default="none",
+        help="Image key to use (hires, lowres, or none). Default: none for clean plots without background.",
     )
     p.add_argument("--top_edges", type=int, default=2000, help="Number of edges to overlay if graph provided")
     p.add_argument(
@@ -109,12 +109,15 @@ def main() -> None:
     crop = None
     if args.crop_mode == "spots":
         crop = _crop_from_coords(coords[mask], args.padding)
-    elif args.crop_mode == "image":
+    elif args.crop_mode == "image" and img_key:
         img = adata.uns["spatial"][lib]["images"][img_key]
         crop = _crop_from_image(img, args.padding)
         if crop is None:
             logger.warning("Image-based crop failed; falling back to spot-based crop.")
             crop = _crop_from_coords(coords[mask], args.padding)
+    elif args.crop_mode == "image" and not img_key:
+        logger.warning("Image-based crop requested but no image background used; falling back to spot-based crop.")
+        crop = _crop_from_coords(coords[mask], args.padding)
     spot_size = _spot_size_from_scalefactors(adata, img_key) if img_key else 1.0
 
     # Plot in_tissue categorical
