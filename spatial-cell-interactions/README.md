@@ -1,148 +1,122 @@
-# Spatial Cell Interactions
+# Spatial graph self-supervised learning for Visium/CytAssist
+Spatial graph self-supervised learning pipeline (GATv2) for modeling cell–cell neighborhood structure from 10x Visium/CytAssist spatial transcriptomics.
 
-Distance-aware Graph Attention Networks (GATv2) for predicting cell-cell interactions from 10x Genomics Visium data. The pipeline ingests Space Ranger `outs/`, builds a spatial neighbor graph with distance encodings, trains a self-supervised edge reconstruction model, and exports ranked edges, ligand-receptor summaries.
+## What this repo does
+Build a spatial graph (spots as nodes, spatial proximity as edges) from Space Ranger `outs/`, then train a self-supervised GNN (link prediction / edge reconstruction) to learn embeddings that capture local spatial context. Includes scripts to generate figures and an optional preprint-style report.
 
-## Method overview
-- Load Visium expression + spatial metadata via `scanpy.read_visium`.
-- QC: in-tissue spot filter, lowly expressed gene filter, total-count normalize to 1e4, log1p, and select highly variable genes.
-- Build a spatial graph (kNN or radius) with Gaussian RBF distance features on each edge.
-- Encode nodes with a distance-aware GATv2 (arXiv:2105.14491) and train via self-supervised edge reconstruction with negative sampling and validation AP early stopping.
-- Score edges and (optionally) compute ligand-receptor enrichment, then render spatial edge overlays and UMAP embeddings.
+## Demo dataset (recommended)
+10x CytAssist FFPE Protein Expression Human Breast Cancer (Space Ranger-style).  
+Loaded size: **4,169 spots × 18,085 genes**.
 
-## Data
-Assumes a standard Space Ranger `outs/` directory containing:
-- `filtered_feature_bc_matrix.h5`
-- `spatial/` with tissue positions (`tissue_positions.parquet` or `tissue_positions.csv`), `scalefactors_json.json`, and associated images.
+## Quickstart (CPU)
+> Note: Dataset is large; download the two files from the 10x dataset page (browser/manual if links change).
 
-`tissue_positions_list.csv` is regenerated verbatim from the native parquet/CSV if present; avoid hand-edited conversions that rescale or swap axes.
-
-Loading relies on `scanpy.read_visium(path=..., count_file="filtered_feature_bc_matrix.h5", load_images=True)`. If files are missing, the CLI will raise a descriptive error.
-
-Place datasets under `data/external/<sample>/outs/` (ignored by git). Processed artifacts are written to `data/processed/`.
-
-## Quickstart
-Install dependencies (Python 3.10+). Ensure you install a PyTorch + PyTorch Geometric wheel that matches your CUDA/CPU setup (see https://pytorch.org/get-started/ and https://pytorch-geometric.readthedocs.io/en/latest/notes/installation.html):
+0) Setup
 ```bash
-pip install -e .
+pip install -r requirements.txt
 ```
 
-CPU-friendly quickstart:
+1) Download and stage the dataset
 ```bash
-python scripts/01_prepare_data.py --visium_path data/external/visium_sample/outs/ --config configs/quickstart_cpu.yaml
-python scripts/02_build_graph.py --h5ad data/processed/visium_sample.h5ad --config configs/quickstart_cpu.yaml
-python scripts/03_train_ssl.py --graph data/processed/visium_sample_graph.pt --config configs/quickstart_cpu.yaml --out_dir results/run_cpu
-python scripts/04_make_figures.py --h5ad data/processed/visium_sample.h5ad --graph data/processed/visium_sample_graph.pt --checkpoint results/run_cpu/checkpoints/best_model.pt --config configs/quickstart_cpu.yaml --out_dir results/run_cpu
-```
-
-One-shot run:
-```bash
-python scripts/05_run_end_to_end.py --visium_path data/external/visium_sample/outs/ --run_name demo --config configs/default.yaml
-```
-
-## Outputs
-A completed run (`results/<run_name>/`) contains:
-```
-results/<run_name>/
-├── checkpoints/
-│   ├── best_model.pt
-│   └── node_embeddings.pt
-├── figures/
-│   ├── spatial_interaction_edges.png
-│   └── umap_embeddings.png
-├── tables/
-│   ├── top_edges.csv
-│   └── top_lr_pairs.csv   # if lr_pairs.csv is available
-└── metrics.json
-```
-
-Example figures (generated after running):
-![Spatial edges](results/figures/spatial_interaction_edges.png)
-![UMAP embeddings](results/figures/umap_embeddings.png)
-
-## Model
-- **Encoder:** Distance-aware GATv2 with edge attributes injected into attention (`edge_dim=RBF_dim`), 2-3 layers, ELU activations, dropout.
-- **Objective:** Self-supervised edge reconstruction using observed spatial edges as positives and uniform negative sampling over non-edges. Loss is BCE on concatenated `[z_i, z_j, edge_attr_ij]` through an MLP head. Early stopping monitors validation average precision.
-- **Graph construction:** kNN (default k=8) or radius-based edges on spot coordinates, with Gaussian RBF distance embeddings (default 16 channels).
-- **Biology add-on:** Optional ligand-receptor ranking when `data/lr_db/lr_pairs.csv` (columns: `ligand,receptor`) is provided; reports pairs enriched among top predicted edges.
-- **Troubleshooting: misaligned spots & histology:** 10x defines `pxl_row_in_fullres` as y and `pxl_col_in_fullres` as x. If spots and tissue image do not overlap, regenerate `tissue_positions_list.csv` directly from the native parquet/CSV (no scaling, no offsets) or run `python scripts/06_fix_spatial_alignment.py --outs_path data/external/<sample>/outs`. `crop_coord` in `sc.pl.spatial` is in pixel space. Then regenerate figures via `scripts/07_make_pretty_spatial_figures.py`.
-
-## Demo (CytAssist breast) and Quickstart
-
-This repo ships with a reproducible demo using the CytAssist FFPE breast sample (10x public dataset). Paths below assume repo root.
-
-### One-shot Quickstart
-```bash
-# 1) Download Visium-formatted outs
 mkdir -p data/external/breast_cytassist_ffpe/outs
 cd data/external/breast_cytassist_ffpe/outs
-curl -L -o filtered_feature_bc_matrix.h5 https://cf.10xgenomics.com/samples/spatial-exp/2.1.0/CytAssist_FFPE_Protein_Expression_Human_Breast_Cancer/CytAssist_FFPE_Protein_Expression_Human_Breast_Cancer_filtered_feature_bc_matrix.h5
-curl -L -o spatial.tar.gz https://cf.10xgenomics.com/samples/spatial-exp/2.1.0/CytAssist_FFPE_Protein_Expression_Human_Breast_Cancer/CytAssist_FFPE_Protein_Expression_Human_Breast_Cancer_spatial.tar.gz
-tar -xzf spatial.tar.gz   # creates outs/spatial/*
+# Download manually from 10x then place/rename:
+#   *_filtered_feature_bc_matrix.h5  -> filtered_feature_bc_matrix.h5
+#   *_spatial.tar.gz                 -> spatial.tar.gz
+tar -xzf spatial.tar.gz   # extracts spatial/ with tissue images, scalefactors, positions
 cd ../../../..
+```
 
-# Windows note: if curl errors on cert revocation, use `curl.exe --ssl-no-revoke -L -o ...`
+Expected layout:
+```
+data/external/breast_cytassist_ffpe/outs/
+  filtered_feature_bc_matrix.h5
+  spatial/
+    tissue_hires_image.png, tissue_lowres_image.png
+    scalefactors_json.json
+    tissue_positions*.csv
+    ...
+```
 
-# 2) Prepare AnnData
+2) Prepare AnnData
+```bash
 python spatial-cell-interactions/scripts/01_prepare_data.py \
   --visium_path data/external/breast_cytassist_ffpe/outs \
   --count_file filtered_feature_bc_matrix.h5 \
   --out_h5ad data/processed/breast_cytassist_ffpe.h5ad \
-  --filter_in_tissue 1 --min_spots_frac 0.001 --n_hvg 2000
+  --filter_in_tissue 1 \
+  --min_spots_frac 0.001 \
+  --n_hvg 2000
+```
 
-# 3) Build radius graph (pixel units)
+3) Build pixel-space radius graph
+```bash
 python spatial-cell-interactions/scripts/02_build_graph.py \
   --h5ad data/processed/breast_cytassist_ffpe.h5ad \
   --out_graph data/processed/breast_cytassist_ffpe_radius_graph.pt \
-  --graph_type radius --distance_unit pixel --radius auto --rbf_dim 16
+  --graph_type radius \
+  --distance_unit pixel \
+  --radius auto \
+  --rbf_dim 16
+```
 
-# 4) Train SSL model (GATv2 self-supervised on graph)
+4) Train SSL (link prediction / edge reconstruction)
+```bash
 python spatial-cell-interactions/scripts/03_train_ssl.py \
   --graph data/processed/breast_cytassist_ffpe_radius_graph.pt \
   --out_dir results/run_breast_ssl \
   --config spatial-cell-interactions/configs/default.yaml \
   --device cpu
-
-# 5) Generate figures (examples below), or use the saved demo outputs in results/figures/
 ```
 
-### Canonical demo outputs (for README/slides)
-- `results/figures/breast_in_tissue_lowres_cropped.png`
-- `results/figures/breast_total_counts_hires_cropped.png`
-- `results/figures/breast_radius_graph_spots_only.png`
-- `results/figures/breast_umap_leiden.png`
-- `results/figures/breast_spatial_leiden_lowres_cropped.png`
+5) Figures
+Use the figure scripts (e.g., `07_make_pretty_spatial_figures.py`) or rely on the provided demo figures in `results/figures/` (cropped to avoid whitespace).
 
-All spatial plots use `crop_coord=(left,right,top,bottom)` in pixel space to avoid whitespace; `img_key` can be set to `none` for spots-only overlays if desired.
+## Expected demo outputs
+- Graph: pixel-space **radius** graph; auto radius ~462 px (median NN ~308 px); ~24,150 edges; edge RBF dim 16.
+- SSL training (`03_train_ssl.py`, CPU): early stop ~epoch 19; validation AUROC ~0.914, AP ~0.890 (link prediction / edge reconstruction).
 
-### Graph format (saved .pt)
-Graphs are PyTorch Geometric `Data` objects with:
-- `x`: node features (shape [n_nodes, n_hvgs])
-- `pos`: spatial coordinates (pixels)
-- `edge_index`: [2, n_edges]
-- `edge_attr`: RBF-encoded distances (default dim 16)
-- `obs_names`: node barcodes
-- `distances`, `rbf_centers`: distance scalars used for encoding
+“Blessed” figures (under `results/figures/`):
+- `breast_total_counts_hires_cropped.png`
+- `breast_in_tissue_lowres_cropped.png`
+- `breast_radius_graph_spots_only.png`
+- `breast_umap_leiden.png`
+- `breast_spatial_leiden_lowres_cropped.png`
 
-Loading uses `torch.serialization.add_safe_globals` to allow these PyG classes; see `scripts/03_train_ssl.py`.
+## Repository layout (current)
+- `.gitignore` — excludes generated data/results artifacts; keeps code and documentation.
+- `requirements.txt` — core Python dependencies for preprocessing, graph construction, and SSL training.
 
-## Reproducibility
-- Deterministic seeding across Python, NumPy, and PyTorch (`seed` in configs).
-- Config-driven hyperparameters (`configs/*.yaml`) with CLI overrides.
-- Checkpoints and embeddings saved under `results/<run_name>/checkpoints/`.
+### Generated artifacts (gitignored; created locally)
+- `data/external/breast_cytassist_ffpe/outs/` — 10x CytAssist FFPE breast cancer Space Ranger outputs (counts + `spatial/`).
+- `data/processed/breast_cytassist_ffpe.h5ad` — processed AnnData.
+- `data/processed/breast_cytassist_ffpe_radius_graph.pt` — PyTorch/PyG graph object saved via torch (`x`, `pos`, `edge_index`, `edge_attr`, …); radius ~462 px, ~24,150 edges, RBF dim 16.
+- `results/figures/` — demo figures (see above).
+- `results/run_breast_ssl/` — SSL training outputs (`config_used.yaml`, logs, checkpoints).
+- `results/smoke_test/` — CI smoke test output (1 epoch CPU run when demo data is present).
 
-## Limitations
-- Visium spots aggregate multiple cells; predicted “interactions” are spot-level proxies.
-- Edge reconstruction is a structural surrogate and does not guarantee true ligand-receptor engagement; biological validation is required.
-- Ligand-receptor enrichment depends on gene detection and provided LR catalogs; sparse expression can limit interpretability.
+### Main codebase
+- `spatial-cell-interactions/`
+  - `configs/` — YAML configs (e.g., `default.yaml`).
+  - `scripts/`
+    - `01_prepare_data.py` — build `.h5ad` from 10x `outs/`.
+    - `02_build_graph.py` — kNN/radius graph builder.
+    - `03_train_ssl.py` — GATv2 self-supervised training (PyG load patch applied).
+    - `04_make_figures.py`, `07_make_pretty_spatial_figures.py` — figure generation.
+    - `05_run_end_to_end.py` — end-to-end runner.
+    - `06_fix_spatial_alignment.py` — alignment utility for problematic Visium HD examples.
+    - `ci_smoke_test.py` — 1-epoch CPU smoke test if demo data present.
+  - `spatial_interactions/` — library package (preprocessing, graph, training, models, utils, visualization).
+  - `tests/`, `notebooks/` — development utilities.
 
-## Cite
-If you use this repository, please cite:
-```bibtex
-@misc{spatialcellinteractions2025,
-  title        = {Spatial Cell Interactions: Distance-aware GATv2 for Visium},
-  author       = {Spatial Cell Interactions Developers},
-  year         = {2025},
-  note         = {https://github.com/your-org/spatial-cell-interactions}
-}
-```
-- Graph defaults use a radius graph. When scalefactors allow, coordinates are converted to microns using spot_diameter_fullres (approximate per 10x guidance); otherwise pixel units are used with an auto radius heuristic (1.5× median nearest-neighbor distance, clamped).
+### Preprint package
+- `reports/preprint_breast_ssl/`
+  - `manuscript.tex`, `manuscript.pdf`, `manuscript.md`
+  - `figures/` (copied demo images)
+  - `references.bib`
+  - `build_preprint.py` (assembles report; runs `pdflatex` if available)
+  - `README.md` (rebuild instructions)
+
+## Notes / limitations
+- The SSL objective measures link prediction / edge reconstruction (AUROC/AP) on the spatial graph; it is not a direct biological interaction ground truth.
+- Some Visium HD “tiny” developer datasets are intentionally corner-cropped/edited and can produce misleading image-backed plots; the CytAssist breast dataset is recommended for clean figures.
