@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.11.27)  18 DEC 2025 15:54
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.11.27)  18 DEC 2025 16:16
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -347,15 +347,15 @@ Package rerunfilecheck Info: File `manuscript.out' has not changed.
 (rerunfilecheck)             Checksum: 623B021E0AE7E93E8CB1429AE48D6FA0;2652.
  ) 
 Here is how much of TeX's memory you used:
- 8711 strings out of 476227
- 139113 string characters out of 5795097
+ 8712 strings out of 476227
+ 139131 string characters out of 5795097
  1934558 words of memory out of 5000000
- 30555 multiletter control sequences out of 15000+600000
+ 30556 multiletter control sequences out of 15000+600000
  563749 words of font info for 55 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
  75i,7n,79p,719b,438s stack positions out of 10000i,1000n,20000p,200000b,200000s
  <c:/Users/uzanv/AppData/Roaming/TinyTeX/texmf-var/fonts/pk/ljfour/jknappen/ec/tcrm1095.600pk><c:/Users/uzanv/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb><c:/Users/uzanv/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb><c:/Users/uzanv/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb><c:/Users/uzanv/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/amsfonts/cm/cmr12.pfb><c:/Users/uzanv/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/amsfonts/cm/cmr17.pfb><c:/Users/uzanv/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb><c:/Users/uzanv/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb><c:/Users/uzanv/AppData/Roaming/TinyTeX/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt10.pfb>
-Output written on manuscript.pdf (8 pages, 3646225 bytes).
+Output written on manuscript.pdf (8 pages, 3646727 bytes).
 PDF statistics:
  198 PDF objects out of 1000 (max. 8388607)
  159 compressed objects within 2 object streams

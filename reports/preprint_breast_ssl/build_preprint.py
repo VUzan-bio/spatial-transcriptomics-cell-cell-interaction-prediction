@@ -184,14 +184,14 @@ Fig.~\ref{{fig:umap}} displays UMAP of the learned embedding with Leiden cluster
 Edge reconstruction achieved AUROC {m['val_auroc']:.3f} and AP {m['val_ap']:.3f} at early stop (epoch {m['early_stop_epoch']}). These metrics reflect structural recovery of spatial adjacency, not biological interaction validation.
 
 \section{{Supervised interaction modeling}}
-We derive proxy labels from expression/markers: (i) ligand--receptor edges (expression proxy), (ii) immune--epithelial interaction strength (soft scores), (iii) exploratory type-pair labels. Immune--epithelial is treated as regression (strength = immune\_score\_i * epithelial\_score\_j + immune\_score\_j * epithelial\_score\_i). Training uses SSL embeddings when available, with PCA fallback.
+We derive proxy labels from expression/markers: (i) ligand--receptor edges (expression proxy), (ii) immune--epithelial interaction strength (soft scores; regression), (iii) exploratory type-pair labels. Immune--epithelial is treated as regression (strength = immune\_score\_i * epithelial\_score\_j + immune\_score\_j * epithelial\_score\_i). Training uses SSL embeddings when available, with PCA fallback.
 
-Supervised metrics (test split):
+Supervised metrics (test split, SSL features):
 \begin{{itemize}}
-\item LR (SSL features): AUROC {sup_metrics.get('lr_test_auroc', 'NA')}, AP {sup_metrics.get('lr_test_ap', 'NA')}.
+\item LR: AUROC {sup_metrics.get('lr_test_auroc', 'NA')}, AP {sup_metrics.get('lr_test_ap', 'NA')}.
 \item Immune--epithelial regression: Spearman {sup_metrics.get('immune_epi_reg_test_spearman', 'NA')}, top-k overlap {sup_metrics.get('immune_epi_reg_test_topk_overlap', 'NA')}.
 \end{{itemize}}
-Binary immune--epithelial and type\_pair are retained for compatibility but are secondary.
+PCA baselines match or exceed SSL on these proxy labels; improving SSL utility is future work. Binary immune--epithelial is highly imbalanced (\textasciitilde 95\% positives) and secondary; type\_pair remains exploratory.
 
 \section{{Discussion}}
 This demo shows that SSL on spatial graphs can learn coherent representations and recover spatial adjacency in Visium/CytAssist data using only pixel coordinates and expression. Graph overlays and clustering remain interpretable without bespoke labels.
