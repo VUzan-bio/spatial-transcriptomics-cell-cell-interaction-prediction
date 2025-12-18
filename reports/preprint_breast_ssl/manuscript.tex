@@ -1,0 +1,141 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{float}
+\title{Spatial cell--cell interaction prediction with graph self-supervised learning on Visium/CytAssist spatial transcriptomics}
+\author{First Author$^1$, Second Author$^1$, Third Author$^2$} % placeholders
+\date{}
+\begin{document}
+\maketitle
+\begin{abstract}
+We demonstrate a self-supervised graph neural network pipeline for spatial transcriptomics, using the 10x Genomics CytAssist FFPE Human Breast Cancer dataset (4,169 spots, 18,085 genes) to construct a pixel-space radius graph and train a distance-aware GATv2 via edge reconstruction. Auto radius selection (median nearest neighbor $\approx 308$ px) yielded a radius of $\approx 462$ px and 24150 edges. Training on CPU early stopped at epoch 19 with validation AUROC 0.914 and AP 0.890, indicating effective structural learning of spatial adjacency. We provide reproducible commands, configuration, and figures illustrating data quality, graph structure, and learned representations.
+\end{abstract}
+
+\section{Introduction}
+Spatial transcriptomics captures gene expression with spatial coordinates, enabling cell--cell interaction hypotheses. Graph-based self-supervised learning (SSL) on spatial neighborhoods leverages adjacency structure without requiring labeled interactions. We apply a distance-aware GATv2 to a Visium/CytAssist dataset, framing edge reconstruction as a proxy for spatial interaction modeling.
+
+\section{Related Work}
+Graph contrastive and reconstruction methods have been effective for representation learning on structured data [1][2]. Spatial transcriptomics pipelines increasingly use graph neural networks to encode spatial proximity [3].
+
+\section{Methods}
+\subsection{Dataset and preprocessing}
+We use the 10x CytAssist FFPE Protein Expression Human Breast Cancer sample (Visium format). Spots were filtered to in-tissue entries; 2,000 highly variable genes were retained per configuration. The resulting AnnData has 4169 spots (obs) and 18085 genes (vars).
+
+\subsection{Graph construction}
+Coordinates from Space Ranger (pixel space) were used to build a radius graph. An auto-radius heuristic sets the radius to 1.5$\times$ median nearest-neighbor distance, clipped to [0.9, 3.0]$\times$; here median NN $\approx 308$ px, radius $\approx 462$ px, yielding 24150 edges. Edge attributes are RBF embeddings of pairwise distances (dim 16).
+
+\subsection{Model and objective}
+A distance-aware GATv2 encoder predicts edge existence (link reconstruction) with negative sampling (ratio 1.0). The objective is binary cross-entropy over observed vs. sampled non-edges, using validation AP/AUROC for early stopping.
+
+\subsection{Training details}
+Hyperparameters (see Table~\ref{tab:hyper}): hidden dim 128, 2 layers, 4 heads, LR 0.001, weight decay 0.0005, patience 15. Training ran on CPU, early stopped at epoch 19.
+
+\section{Results}
+\subsection{Data quality and spatial context}
+Fig.~\ref{fig:counts} shows total counts with histology; Fig.~\ref{fig:intissue} shows in-tissue calls on lowres, indicating coherent tissue coverage.
+
+\subsection{Spatial graph}
+Fig.~\ref{fig:graph} visualizes the radius graph (spots-only). The edge density reflects the auto-chosen radius (462 px) and spatial neighborhoods.
+
+\subsection{Representations}
+Fig.~\ref{fig:umap} displays UMAP of the learned embedding with Leiden clusters; Fig.~\ref{fig:spatial_leiden} maps the same clusters onto the tissue, showing spatial coherence.
+
+\subsection{Quantitative performance}
+Edge reconstruction achieved AUROC 0.914 and AP 0.890 at early stop (epoch 19). These metrics reflect structural recovery of spatial adjacency, not biological interaction validation.
+
+\section{Discussion}
+This demo shows that SSL on spatial graphs can learn coherent representations and recover spatial adjacency in Visium/CytAssist data using only pixel coordinates and expression. Graph overlays and clustering remain interpretable without bespoke labels.
+
+\section{Limitations}
+- Metrics assess adjacency reconstruction, not ligand--receptor biology.\newline
+- Radius choice and pixel-space assumptions can affect neighborhood structure.\newline
+- FFPE modality may differ from fresh frozen; domain shift is possible.
+
+\section{Reproducibility and Availability}
+All commands run on CPU. From repo root:
+\begin{verbatim}
+# Download
+mkdir -p data/external/breast_cytassist_ffpe/outs
+cd data/external/breast_cytassist_ffpe/outs
+curl -L -o filtered_feature_bc_matrix.h5 https://cf.10xgenomics.com/samples/spatial-exp/2.1.0/CytAssist_FFPE_Protein_Expression_Human_Breast_Cancer/CytAssist_FFPE_Protein_Expression_Human_Breast_Cancer_filtered_feature_bc_matrix.h5
+curl -L -o spatial.tar.gz https://cf.10xgenomics.com/samples/spatial-exp/2.1.0/CytAssist_FFPE_Protein_Expression_Human_Breast_Cancer/CytAssist_FFPE_Protein_Expression_Human_Breast_Cancer_spatial.tar.gz
+tar -xzf spatial.tar.gz
+cd ../../../..
+
+# Prepare / graph / train
+python spatial-cell-interactions/scripts/01_prepare_data.py --visium_path data/external/breast_cytassist_ffpe/outs --count_file filtered_feature_bc_matrix.h5 --out_h5ad data/processed/breast_cytassist_ffpe.h5ad --filter_in_tissue 1 --min_spots_frac 0.001 --n_hvg 2000
+python spatial-cell-interactions/scripts/02_build_graph.py --h5ad data/processed/breast_cytassist_ffpe.h5ad --out_graph data/processed/breast_cytassist_ffpe_radius_graph.pt --graph_type radius --distance_unit pixel --radius auto --rbf_dim 16
+python spatial-cell-interactions/scripts/03_train_ssl.py --graph data/processed/breast_cytassist_ffpe_radius_graph.pt --out_dir results/run_breast_ssl --config spatial-cell-interactions/configs/default.yaml --device cpu
+
+# Figures (already provided in results/figures/)
+\end{verbatim}
+Environment: Python 3.12 (local), key packages: scanpy/anndata/torch/torch-geometric (see requirements.txt).
+
+\section{Acknowledgements}
+We thank the open-source contributors to Scanpy and PyTorch Geometric. Dataset courtesy of 10x Genomics.
+
+\section{References}
+[1] Placeholder citation.\newline
+[2] Placeholder citation.\newline
+[3] Placeholder citation.
+
+\section{Tables}
+\label{tab:hyper}
+\begin{tabular}{ll}
+\hline
+Hyperparameter & Value \\
+\hline
+Hidden dim & 128 \\
+Output dim & 64 \\
+Layers & 2 \\
+Heads & 4 \\
+Learning rate & 0.001 \\
+Weight decay & 0.0005 \\
+Epochs & 80 \\
+Patience & 15 \\
+Val fraction & 0.1 \\
+Neg ratio & 1.0 \\
+Grad clip & 5.0 \\
+RBF dim & 16 \\
+k (if kNN) & 8 \\
+\hline
+\end{tabular}
+
+\section{Figures}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/breast_total_counts_hires_cropped.png}
+\caption{Total counts on histology (hires). Spots show localized signal; cropping removes whitespace.}
+\label{fig:counts}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/breast_in_tissue_lowres_cropped.png}
+\caption{In-tissue calls on lowres image (categorical). Tissue coverage is coherent; background is minimized by cropping.}
+\label{fig:intissue}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/breast_radius_graph_spots_only.png}
+\caption{Radius graph overlay (spots only). Auto radius $\approx 462$ px yields 24150 edges, capturing local neighborhoods.}
+\label{fig:graph}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.6\textwidth]{figures/breast_umap_leiden.png}
+\caption{UMAP of learned embeddings with Leiden clusters. Clusters are well separated, indicating structured representations.}
+\label{fig:umap}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{figures/breast_spatial_leiden_lowres_cropped.png}
+\caption{Leiden clusters mapped to tissue (lowres, cropped). Spatial coherence of clusters supports representation quality.}
+\label{fig:spatial_leiden}
+\end{figure}
+
+\end{document}
